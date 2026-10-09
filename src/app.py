@@ -5,11 +5,16 @@ A super simple FastAPI application that allows students to view and sign up
 for extracurricular activities at Mergington High School.
 """
 
-from fastapi import FastAPI, HTTPException
+import os
+import json
+import secrets
+from pathlib import Path
+from typing import Optional
+
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse
-import os
-from pathlib import Path
 
 app = FastAPI(title="Mergington High School API",
               description="API for viewing and signing up for extracurricular activities")
@@ -18,6 +23,36 @@ app = FastAPI(title="Mergington High School API",
 current_dir = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=os.path.join(Path(__file__).parent,
           "static")), name="static")
+
+staff_auth = HTTPBasic(auto_error=False)
+
+
+def verify_staff_credentials(
+        credentials: Optional[HTTPBasicCredentials] = Depends(staff_auth)) -> str:
+    try:
+        staff_accounts = json.loads(os.getenv("STAFF_CREDENTIALS", "{}"))
+    except json.JSONDecodeError:
+        staff_accounts = {}
+
+    if not isinstance(staff_accounts, dict) or not staff_accounts:
+        raise HTTPException(
+            status_code=503,
+            detail="Staff login is not configured on this server"
+        )
+
+    username = credentials.username if credentials else ""
+    password = credentials.password if credentials else ""
+    expected_password = staff_accounts.get(username, "")
+    if not isinstance(expected_password, str):
+        expected_password = ""
+    password_matches = secrets.compare_digest(
+        password.encode("utf-8"), expected_password.encode("utf-8"))
+
+    if username not in staff_accounts or not password_matches:
+        raise HTTPException(status_code=401, detail="Invalid staff credentials")
+
+    return username
+
 
 # In-memory activity database
 activities = {
@@ -88,8 +123,16 @@ def get_activities():
     return activities
 
 
+@app.post("/auth/login")
+def login_staff(staff_username: str = Depends(verify_staff_credentials)):
+    return {"username": staff_username}
+
+
 @app.post("/activities/{activity_name}/signup")
-def signup_for_activity(activity_name: str, email: str):
+def signup_for_activity(
+        activity_name: str,
+        email: str,
+        _staff_username: str = Depends(verify_staff_credentials)):
     """Sign up a student for an activity"""
     # Validate activity exists
     if activity_name not in activities:
@@ -111,7 +154,10 @@ def signup_for_activity(activity_name: str, email: str):
 
 
 @app.delete("/activities/{activity_name}/unregister")
-def unregister_from_activity(activity_name: str, email: str):
+def unregister_from_activity(
+    activity_name: str,
+    email: str,
+    _staff_username: str = Depends(verify_staff_credentials)):
     """Unregister a student from an activity"""
     # Validate activity exists
     if activity_name not in activities:
