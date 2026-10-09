@@ -32,6 +32,10 @@ A super simple FastAPI application that allows students to view and sign up for 
 | GET    | `/activities`                                                     | Get all activities with their details and current participant count |
 | POST   | `/activities/{activity_name}/signup?email=student@mergington.edu` | Sign up for an activity                                             |
 
+## Staff Access
+
+Signing up or unregistering a student requires staff credentials. Set `STAFF_CREDENTIALS` to a JSON object mapping each teacher username to a password in the server environment before starting the application. Supply it through your deployment's secret configuration, never a committed file. Use HTTPS when credentials are sent over a network. If the setting is missing or invalid, staff login and registration changes are unavailable.
+
 ## Data Model
 
 The application uses a simple data model with meaningful identifiers:

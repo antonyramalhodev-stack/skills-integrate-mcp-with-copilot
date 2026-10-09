@@ -3,6 +3,27 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const signupContainer = document.getElementById("signup-container");
+  const staffAuthButton = document.getElementById("staff-auth-button");
+  const staffAuthLabel = document.getElementById("staff-auth-label");
+  const staffLoginDialog = document.getElementById("staff-login-dialog");
+  const staffLoginForm = document.getElementById("staff-login-form");
+  const staffLoginError = document.getElementById("staff-login-error");
+  const staffLoginCancel = document.getElementById("staff-login-cancel");
+  let staffCredentials = null;
+
+  function authorizationHeader(username, password) {
+    const credentialBytes = new TextEncoder().encode(`${username}:${password}`);
+    const encodedCredentials = btoa(
+      Array.from(credentialBytes, (byte) => String.fromCharCode(byte)).join("")
+    );
+    return `Basic ${encodedCredentials}`;
+  }
+
+  function updateStaffControls() {
+    signupContainer.hidden = !staffCredentials;
+    staffAuthLabel.textContent = staffCredentials ? "Log out" : "Teacher login";
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -12,6 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Clear loading message
       activitiesList.innerHTML = "";
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -29,8 +51,11 @@ document.addEventListener("DOMContentLoaded", () => {
               <ul class="participants-list">
                 ${details.participants
                   .map(
-                    (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                    (email) => `<li><span class="participant-email">${email}</span>${
+                      staffCredentials
+                        ? `<button type="button" class="delete-btn" aria-label="Unregister ${email} from ${name}" data-activity="${name}" data-email="${email}">×</button>`
+                        : ""
+                    }</li>`
                   )
                   .join("")}
               </ul>
@@ -69,7 +94,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Handle unregister functionality
   async function handleUnregister(event) {
-    const button = event.target;
+    const button = event.currentTarget;
     const activity = button.getAttribute("data-activity");
     const email = button.getAttribute("data-email");
 
@@ -80,6 +105,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/unregister?email=${encodeURIComponent(email)}`,
         {
           method: "DELETE",
+          headers: { Authorization: authorizationHeader(staffCredentials.username, staffCredentials.password) },
         }
       );
 
@@ -110,6 +136,50 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  staffAuthButton.addEventListener("click", () => {
+    if (staffCredentials) {
+      staffCredentials = null;
+      updateStaffControls();
+      fetchActivities();
+      return;
+    }
+
+    staffLoginError.textContent = "";
+    staffLoginDialog.showModal();
+  });
+
+  staffLoginCancel.addEventListener("click", () => staffLoginDialog.close());
+
+  staffLoginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    staffLoginError.textContent = "";
+
+    const username = document.getElementById("staff-username").value;
+    const password = document.getElementById("staff-password").value;
+
+    try {
+      const response = await fetch("/auth/login", {
+        method: "POST",
+        headers: { Authorization: authorizationHeader(username, password) },
+      });
+
+      if (!response.ok) {
+        const result = await response.json();
+        staffLoginError.textContent = result.detail || "Unable to sign in";
+        return;
+      }
+
+      staffCredentials = { username, password };
+      staffLoginForm.reset();
+      staffLoginDialog.close();
+      updateStaffControls();
+      fetchActivities();
+    } catch (error) {
+      staffLoginError.textContent = "Unable to reach the server. Please try again.";
+      console.error("Error signing in:", error);
+    }
+  });
+
   // Handle form submission
   signupForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -124,6 +194,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/signup?email=${encodeURIComponent(email)}`,
         {
           method: "POST",
+          headers: { Authorization: authorizationHeader(staffCredentials.username, staffCredentials.password) },
         }
       );
 
